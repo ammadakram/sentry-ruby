@@ -1,0 +1,30 @@
+# frozen_string_literal: true
+
+module Sentry
+  module Resque
+    module ActiveJobSupport
+      ACTIVE_JOB_ADAPTER = "ActiveJob::QueueAdapters::ResqueAdapter"
+      ACTIVE_JOB_WRAPPER = "ActiveJob::QueueAdapters::ResqueAdapter::JobWrapper"
+
+      def record(queue, worker, payload, &block)
+        return super unless payload["class"] == ACTIVE_JOB_WRAPPER
+
+        capture_unreported_exception(queue, worker, payload, &block)
+      end
+
+      private
+
+      def capture_unreported_exception(queue, worker, payload)
+        yield
+      rescue Exception => exception # rubocop:disable Lint/RescueException
+        unless Sentry.exception_captured?(exception)
+          Sentry.with_scope do |scope|
+            apply_job_scope(scope, queue, worker, payload)
+            ::Sentry::Resque.capture_exception(exception, hint: { background: false })
+          end
+        end
+        raise
+      end
+    end
+  end
+end
