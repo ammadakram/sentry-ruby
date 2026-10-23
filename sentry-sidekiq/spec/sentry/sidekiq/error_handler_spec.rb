@@ -91,6 +91,28 @@ RSpec.describe Sentry::Sidekiq::ErrorHandler do
     expect(event[:contexts][:sidekiq]).to eq(expected_context)
   end
 
+  context "when the extension handling the job raises" do
+    let(:failing_extension_class) do
+      Class.new(Sentry::Sidekiq::JobExtension) do
+        define_method(:error_data) { |**| raise "extension failure" }
+        define_method(:integration) { |**| raise "extension failure" }
+      end
+    end
+
+    before { Sentry.register_job_extension(failing_extension_class.new(name: "failing")) }
+
+    after { Sentry.job_extensions.clear }
+
+    it "still captures the exception with the Sidekiq context" do
+      exception = build_exception
+
+      subject.call(exception, { context: "Job raised exception", job: context })
+
+      expect(transport.events.count).to eq(1)
+      expect(transport.events.first.contexts[:sidekiq]).to include("jid" => context["jid"], "class" => "HardWorker")
+    end
+  end
+
   context "when the job is wrapped" do
     let(:context) { super().merge("class" => "WrapperJob", "wrapped" => "HardWorker") }
 
