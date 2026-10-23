@@ -20,7 +20,8 @@ module Sentry
         message_id: Span::DataConventions::MESSAGING_MESSAGE_ID,
         destination: Span::DataConventions::MESSAGING_DESTINATION_NAME,
         receive_latency: Span::DataConventions::MESSAGING_MESSAGE_RECEIVE_LATENCY,
-        retry_count: Span::DataConventions::MESSAGING_MESSAGE_RETRY_COUNT
+        retry_count: Span::DataConventions::MESSAGING_MESSAGE_RETRY_COUNT,
+        body_size: Span::DataConventions::MESSAGING_MESSAGE_BODY_SIZE
       }.freeze
 
       # The extension's name, used to identify it in SDK log messages.
@@ -196,9 +197,10 @@ module Sentry
       # @return [Hash] a Hash with any of the keys +:system+ (a String naming
       #   the backend), +:message_id+ (a String), +:destination+ (a String,
       #   such as the queue name), +:receive_latency+ (a Numeric, the
-      #   milliseconds between enqueueing and the start of the job) and
-      #   +:retry_count+ (an Integer, the retries already attempted). Empty by
-      #   default.
+      #   milliseconds between enqueueing and the start of the job),
+      #   +:retry_count+ (an Integer, the retries already attempted) and
+      #   +:body_size+ (a non-negative Integer, the size of the message body
+      #   in bytes). Empty by default.
       def messaging_data(job:, **)
         {}
       end
