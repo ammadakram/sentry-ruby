@@ -413,18 +413,14 @@ RSpec.describe Sentry::Sidekiq::SentryContextClientMiddleware do
         Sentry.configuration.sdk_logger = Logger.new(sdk_log)
       end
 
-      let(:client) do
-        Sidekiq::Client.new.tap do |client|
-          client.middleware do |chain|
-            chain.add described_class, Sentry::Sidekiq::Producer.new(extension: failing_extension)
-          end
-        end
-      end
-
       it "enqueues the job once and logs the extension's failure" do
-        client.push('queue' => 'default', 'class' => HappyWorker, 'args' => [])
+        middleware = described_class.new(Sentry::Sidekiq::Producer.new(extension: failing_extension))
+        job = { "jid" => "123456", "class" => "HappyWorker", "args" => [], "queue" => "default" }
+        enqueued = 0
 
-        expect(queue.size).to be(1)
+        middleware.call(HappyWorker, job, "default", nil) { enqueued += 1 }
+
+        expect(enqueued).to eq(1)
         expect(sdk_log.string).to include('Job extension "failing" failed')
       end
     end
