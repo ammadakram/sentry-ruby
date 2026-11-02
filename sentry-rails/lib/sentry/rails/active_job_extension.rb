@@ -16,7 +16,7 @@ module Sentry
       end
 
       def consumer
-        @consumer ||= Consumer.new(extension: self)
+        @consumer ||= Sentry::JobExtensions::Consumer.new(extension: self)
       end
 
       def producer(job:)

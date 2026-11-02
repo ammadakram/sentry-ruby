@@ -5,7 +5,6 @@ require "sentry/rails/serializer"
 require "sentry/rails/error_reporter_context"
 require "sentry/rails/active_job_extension"
 require "sentry/rails/active_job/producer"
-require "sentry/rails/active_job/consumer"
 
 module Sentry
   module Rails
