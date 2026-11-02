@@ -8,16 +8,11 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
 
   let(:configure_sentry) { proc { |config| config.traces_sample_rate = 1.0 } }
 
-  def register_extension(&body)
-    klass = Class.new(Sentry::Rails::ActiveJobExtension) do
-      def handles?(_job)
-        true
-      end
+  def register_extension(adapter: :test, &body)
+    klass = Class.new(Sentry::Rails::ActiveJobExtension)
+    klass.class_eval(&body) if body
 
-      class_eval(&body) if body
-    end
-
-    Sentry.register_job_extension(klass.new(name: "test_backend"))
+    Sentry::Rails.register_active_job_extension(adapter, klass.new(name: "test_backend"))
   end
 
   def perform_failing_job
@@ -38,8 +33,8 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
     parent.spans.find { |span| span[:op] == "queue.publish" }
   end
 
-  def register_enriching_extension
-    register_extension do
+  def register_enriching_extension(adapter: :test)
+    register_extension(adapter: adapter) do
       def scope_data(job:)
         {
           contexts: { backend: { "jid" => "backend-jid" }, active_job: { job_id: "backend", attempt: 3 } },
@@ -544,7 +539,7 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
     it "leaves the producer span, trace headers and user to an extension that instruments enqueueing the job" do
       register_extension do
         def producer(job:)
-          Sentry::JobExtensions::Producer::Delegated.new
+          Sentry::JobExtensions::Producer::Delegated.new(extension: self)
         end
       end
       Sentry.set_user(id: "42")
@@ -565,8 +560,8 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
       expect(event.extra.keys & extension_data_keys).to be_empty
     end
 
-    it "sends nothing from an extension that does not handle the job" do
-      register_enriching_extension.define_singleton_method(:handles?) { |_job| false }
+    it "sends nothing from an extension registered for another adapter" do
+      register_enriching_extension(adapter: :sidekiq)
 
       within_parent_transaction { failing_job.perform_later }
       expect { drain }.to raise_error(RuntimeError, /boom from failing_job spec/)
@@ -574,26 +569,6 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
       expect_no_extension_data(error_event)
       expect_no_extension_data(consumer_transaction)
       expect(publish_span[:data]).not_to have_key("messaging.message.receive.latency")
-    end
-
-    it "never consults the registry for jobs on a skipped adapter" do
-      consulted = []
-      Sentry.register_job_extension(
-        Class.new(Sentry::JobExtensions::Extension) do
-          define_method(:handles?) do |job|
-            consulted << job
-            true
-          end
-        end.new(name: "observer")
-      )
-      Sentry.configuration.rails.skippable_job_adapters = [failing_job.queue_adapter.class.to_s]
-
-      expect do
-        failing_job.perform_later
-        drain
-      end.to raise_error(RuntimeError, /boom from failing_job spec/)
-
-      expect(consulted).to be_empty
     end
 
     context "when every hook raises" do

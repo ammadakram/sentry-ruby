@@ -88,7 +88,7 @@ RSpec.configure do |config|
 
     reset_sentry_globals!
 
-    Sentry.job_extensions.clear
+    Sentry::Rails.active_job_extensions.clear
 
     Rails.application&.cleanup!
   end

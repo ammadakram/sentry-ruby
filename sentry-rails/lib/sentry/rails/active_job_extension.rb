@@ -6,19 +6,21 @@ module Sentry
       SPAN_ORIGIN = "auto.queue.active_job"
       USER_FIELDS_ALLOWLIST = %w[id email username].freeze
 
-      attr_reader :registry
-
       def initialize(name: "active_job")
         super(name: name)
-        @registry = Sentry.job_extensions.with_default(self)
       end
 
-      def handles?(job)
-        job.is_a?(::ActiveJob::Base)
+      def self.adapter_name(job_class)
+        name = job_class.queue_adapter_name if job_class.respond_to?(:queue_adapter_name)
+        (name || job_class.queue_adapter.class.name.demodulize.delete_suffix("Adapter").underscore).to_sym
+      end
+
+      def consumer
+        @consumer ||= Consumer.new(extension: self)
       end
 
       def producer(job:)
-        @producer ||= Producer.new(registry: registry)
+        @producer ||= Producer.new(extension: self)
       end
 
       def extract_trace_headers(job:, payload:)

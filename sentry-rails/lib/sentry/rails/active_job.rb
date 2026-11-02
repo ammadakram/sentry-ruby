@@ -59,20 +59,20 @@ module Sentry
             @default_extension ||= ActiveJobExtension.new
           end
 
-          def consumer
-            @consumer ||= ActiveJobExtension::Consumer.new(registry: job_extensions)
+          def consumer(job)
+            extension_for(job).consumer
           end
 
           def producer(job)
-            job_extensions.for(job).producer(job: job)
+            extension_for(job).producer(job: job)
           end
 
           def prepare_payload(job, payload)
             safely(job, "inject _sentry payload", fallback: payload) { producer(job).prepare_payload(job, payload) }
           end
 
-          def job_extensions
-            default_extension.registry
+          def extension_for(job)
+            Sentry::Rails.active_job_extensions.fetch(ActiveJobExtension.adapter_name(job.class), default_extension)
           end
 
           def producer_callback_registered?
@@ -111,12 +111,13 @@ module Sentry
 
           def record_in_scope(scope, job, user: nil, payload: nil)
             transaction = nil
-            extension = job_extensions.for(job)
+            job_consumer = consumer(job)
+            extension = job_consumer.extension
 
             begin
               scope.set_user(user.transform_keys(&:to_sym)) if user && !user.empty?
 
-              safely(job, "apply scope data") { consumer.apply_scope_data(scope, job) }
+              safely(job, "apply scope data") { job_consumer.apply_scope_data(scope, job) }
               apply_active_job_context(scope, job)
 
               name = safely(job, "name the transaction", fallback: job.class.name) { extension.transaction_name(job: job) }
@@ -124,16 +125,16 @@ module Sentry
 
               transaction = safely(job, "start the transaction") do
                 trace_headers = extension.extract_trace_headers(job: job, payload: payload)
-                consumer.start_transaction(scope, job, trace_headers: trace_headers)
+                job_consumer.start_transaction(scope, job, trace_headers: trace_headers)
               end
 
               yield.tap do
-                consumer.finish_transaction(transaction, 200)
+                job_consumer.finish_transaction(transaction, 200)
               end
             rescue Exception => e # rubocop:disable Lint/RescueException
-              consumer.finish_transaction(transaction, 500)
+              job_consumer.finish_transaction(transaction, 500)
 
-              if safely(job, "decide whether to report the job exception", fallback: true) { consumer.report_exception?(job, e) }
+              if safely(job, "decide whether to report the job exception", fallback: true) { job_consumer.report_exception?(job, e) }
                 capture_exception(job, e)
               end
 
@@ -144,7 +145,7 @@ module Sentry
           def capture_exception(job, e)
             error_data = active_job_error_data(job)
             captured = safely(job, "capture the job exception", fallback: false) do
-              consumer.capture_exception(job, e, **error_data)
+              consumer(job).capture_exception(job, e, **error_data)
               true
             end
             return if captured
@@ -174,7 +175,7 @@ module Sentry
               return if error.nil?
               return if !Sentry.initialized? || job.already_supported_by_sentry_integration?
               report = safely(job, "decide whether to report the retried exception", fallback: Sentry.configuration.rails.active_job_report_on_retry_error) do
-                consumer.report_retried_exception?(job, error)
+                consumer(job).report_retried_exception?(job, error)
               end
               return unless report
 
@@ -192,7 +193,7 @@ module Sentry
           private
 
           def safely(job, context, fallback: nil, &block)
-            consumer.safely(job_extensions.for(job), context, fallback: fallback, &block)
+            consumer(job).safely(context, fallback: fallback, &block)
           end
 
           def active_job_error_data(job)
