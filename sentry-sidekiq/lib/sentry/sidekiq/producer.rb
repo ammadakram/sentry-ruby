@@ -3,8 +3,6 @@
 module Sentry
   module Sidekiq
     class Producer < Sentry::JobExtensions::Producer
-      public :safely
-
       private
 
       def describe_span(span, job)

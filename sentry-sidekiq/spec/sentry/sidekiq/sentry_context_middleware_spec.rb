@@ -76,7 +76,7 @@ RSpec.describe Sentry::Sidekiq::SentryContextServerMiddleware do
     it "performs the job once and logs the extension's failure" do
       performed = 0
 
-      described_class.new(Sentry::Sidekiq::Consumer.new(extension: failing_extension)).call(HappyWorker.new, { "jid" => "123456", "class" => "HappyWorker", "args" => [] }, "default") { performed += 1 }
+      described_class.new(Sentry::JobExtensions::Consumer.new(extension: failing_extension)).call(HappyWorker.new, { "jid" => "123456", "class" => "HappyWorker", "args" => [] }, "default") { performed += 1 }
 
       expect(performed).to eq(1)
       expect(sdk_log.string).to include('Job extension "failing" failed')

@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "sentry/sidekiq/job_extension"
-require "sentry/sidekiq/consumer"
 require "sentry/sidekiq/producer"
 
 module Sentry
@@ -10,7 +9,7 @@ module Sentry
       SPAN_ORIGIN = JobExtension::SPAN_ORIGIN
 
       def self.consumer
-        @consumer ||= Consumer.new(extension: Sentry::Sidekiq.job_extension)
+        @consumer ||= Sentry::JobExtensions::Consumer.new(extension: Sentry::Sidekiq.job_extension)
       end
 
       def initialize(consumer = self.class.consumer)
