@@ -20,9 +20,7 @@ RSpec.shared_context "sidekiq", shared_context: :metadata do
     end
   end
 
-  def register_failing_extension
-    Sentry.register_job_extension(failing_extension_class.new(name: "failing"))
-  end
+  let(:failing_extension) { failing_extension_class.new(name: "failing") }
 
   let(:processor) do
     new_processor
@@ -73,15 +71,12 @@ RSpec.describe Sentry::Sidekiq::SentryContextServerMiddleware do
         config.traces_sample_rate = 1.0
         config.sdk_logger = Logger.new(sdk_log)
       end
-      register_failing_extension
     end
-
-    after { Sentry.job_extensions.clear }
 
     it "performs the job once and logs the extension's failure" do
       performed = 0
 
-      described_class.new.call(HappyWorker.new, { "jid" => "123456", "class" => "HappyWorker", "args" => [] }, "default") { performed += 1 }
+      described_class.new(Sentry::Sidekiq::Consumer.new(extension: failing_extension)).call(HappyWorker.new, { "jid" => "123456", "class" => "HappyWorker", "args" => [] }, "default") { performed += 1 }
 
       expect(performed).to eq(1)
       expect(sdk_log.string).to include('Job extension "failing" failed')
@@ -416,10 +411,15 @@ RSpec.describe Sentry::Sidekiq::SentryContextClientMiddleware do
     context "when the extension handling the job raises" do
       before do
         Sentry.configuration.sdk_logger = Logger.new(sdk_log)
-        register_failing_extension
       end
 
-      after { Sentry.job_extensions.clear }
+      let(:client) do
+        Sidekiq::Client.new.tap do |client|
+          client.middleware do |chain|
+            chain.add described_class, Sentry::Sidekiq::Producer.new(extension: failing_extension)
+          end
+        end
+      end
 
       it "enqueues the job once and logs the extension's failure" do
         client.push('queue' => 'default', 'class' => HappyWorker, 'args' => [])

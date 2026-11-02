@@ -15,10 +15,6 @@ module Sentry
         @retry_policy = retry_policy
       end
 
-      def handles?(job)
-        sidekiq_job?(job)
-      end
-
       def error_context_transaction_name(context)
         job = context["wrapped"] || context["class"] ? context : context[:job]
         return transaction_name(job: job) if job_class(job)
@@ -93,7 +89,7 @@ module Sentry
       end
 
       def producer(job:)
-        @producer ||= Sentry::JobExtensions::Producer::Delegated.new
+        @producer ||= Sentry::JobExtensions::Producer::Delegated.new(extension: self)
       end
 
       private

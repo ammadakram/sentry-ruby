@@ -29,7 +29,7 @@ module Sentry
         return unless @failure_reporting.report?(job, sidekiq_config)
 
         contexts = { sidekiq: ContextFilter.new(context).filtered }
-        captured = @consumer.safely(@consumer.registry.for(job), "capture the job exception", fallback: false) do
+        captured = @consumer.safely("capture the job exception", fallback: false) do
           @consumer.capture_exception(job, ex, contexts: contexts)
           true
         end

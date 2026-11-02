@@ -7,7 +7,7 @@ module Sentry
 
       private
 
-      def describe_span(span, extension, job)
+      def describe_span(span, job)
         span.set_description(extension.publish_description(job: job))
         set_messaging_data(span, extension.publish_messaging_data(job: job))
       end

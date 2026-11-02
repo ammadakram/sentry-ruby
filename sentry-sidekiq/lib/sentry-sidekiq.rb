@@ -18,10 +18,6 @@ module Sentry
     def self.job_extension
       @job_extension ||= JobExtension.new
     end
-
-    def self.job_extensions
-      @job_extensions ||= Sentry.job_extensions.with_default(job_extension)
-    end
   end
 end
 

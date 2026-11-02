@@ -99,9 +99,7 @@ RSpec.describe Sentry::Sidekiq::ErrorHandler do
       end
     end
 
-    before { Sentry.register_job_extension(failing_extension_class.new(name: "failing")) }
-
-    after { Sentry.job_extensions.clear }
+    subject { described_class.new(consumer: Sentry::Sidekiq::Consumer.new(extension: failing_extension_class.new(name: "failing"))) }
 
     it "still captures the exception with the Sidekiq context" do
       exception = build_exception

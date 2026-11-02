@@ -16,10 +16,6 @@ module Sentry
         super(name: "sidekiq_active_job")
       end
 
-      def handles?(job)
-        super && job.class.queue_adapter.class.name == ActiveJobSupport::ACTIVE_JOB_ADAPTER
-      end
-
       def transaction_name(job:)
         "#{JobExtension::SIDEKIQ_NAME}/#{super}"
       end
@@ -37,10 +33,10 @@ module Sentry
       end
 
       def producer(job:)
-        @producer ||= Producer.new(registry: registry)
+        @producer ||= Producer.new(extension: self)
       end
     end
 
-    Sentry.register_job_extension(ActiveJobExtension.new)
+    Sentry::Rails.register_active_job_extension(:sidekiq, ActiveJobExtension.new)
   end
 end
