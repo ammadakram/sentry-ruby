@@ -5,26 +5,12 @@ module Sentry
     # Base class for objects that let a background-job backend enrich Sentry's
     # job integrations.
     #
-    # A backend gem subclasses this class, receives everything the extension
-    # depends on (configuration, collaborators) through its constructor, and
-    # registers one instance with {Sentry.register_job_extension}. Sentry treats
-    # jobs as opaque objects: only the extension interprets the job it is given.
-    #
-    # @example Defining and registering an extension
-    #   class MyBackend::SentryJobExtension < Sentry::JobExtensions::Extension
-    #     def initialize(config:)
-    #       super(name: "my_backend")
-    #       @config = config
-    #     end
-    #
-    #     def handles?(job)
-    #       job.class.queue_adapter_name.to_s == "my_backend"
-    #     end
-    #   end
-    #
-    #   Sentry.register_job_extension(MyBackend::SentryJobExtension.new(config: MyBackend.config))
+    # A backend gem subclasses this class and receives everything the extension
+    # depends on (configuration, collaborators) through its constructor. Sentry
+    # treats jobs as opaque objects: only the extension interprets the job it is
+    # given.
     class Extension
-      # The extension's unique name. No two registered extensions can share it.
+      # The extension's name, used to identify it in SDK log messages.
       #
       # @return [String]
       attr_reader :name
@@ -40,22 +26,10 @@ module Sentry
         @name = name.to_s.dup.freeze
       end
 
-      # Whether this extension handles the given job. Override it to claim
-      # the jobs run by the extension's backend.
-      #
-      # If this method raises a StandardError, the failure is logged through the
-      # SDK logger and the extension is treated as not handling the job.
-      #
-      # @param job [Object] the job, as passed by the job integration
-      # @return [Boolean] false unless overridden
-      def handles?(job)
-        false
-      end
-
       # @!group Hooks
       #
-      # Hooks are called directly by job integrations on the extension that
-      # handles the job. Each hook maps its input to data and must not mutate
+      # Hooks are called directly by job integrations on the extension they
+      # are given. Each hook maps its input to data and must not mutate
       # the objects it is given; the job integration applies the returned
       # data. Override only the hooks the backend can supply.
 

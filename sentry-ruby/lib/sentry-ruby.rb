@@ -66,8 +66,6 @@ module Sentry
     exception_locals_tp
   ].freeze
 
-  JOB_EXTENSIONS = JobExtensions::Registry.new
-
   class << self
     # @!visibility private
     def exception_locals_tp
@@ -151,27 +149,6 @@ module Sentry
 
       meta = { name: "sentry.ruby.#{name}", version: version }.freeze
       integrations[name.to_s] = meta
-    end
-
-    ##### Job Extensions #####
-
-    # Returns the process-wide registry of background-job extensions.
-    #
-    # @return [JobExtensions::Registry]
-    def job_extensions
-      JOB_EXTENSIONS
-    end
-
-    # Registers a background-job extension built by a backend gem. It can be
-    # called at load time, before or after {Sentry.init}.
-    #
-    # @param extension [JobExtensions::Extension] an extension instance,
-    #   constructed with its own configuration and collaborators
-    # @return [JobExtensions::Extension] the registered extension
-    # @raise [ArgumentError] if the argument is not a {JobExtensions::Extension}
-    #   instance, or an extension with the same name is already registered
-    def register_job_extension(extension)
-      job_extensions.register(extension)
     end
 
     ##### Method Delegation #####

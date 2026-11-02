@@ -7,10 +7,8 @@ module Sentry
       OP_NAME = "queue.publish"
 
       def record_span(job)
-        extension = registry.for(job)
-
         Sentry.with_child_span(op: OP_NAME) do |span|
-          safely(extension, "record the publish span") { describe_span(span, extension, job) } if span
+          safely("record the publish span") { describe_span(span, job) } if span
 
           yield
         end
@@ -21,16 +19,16 @@ module Sentry
       end
 
       def inject_trace_headers(job, payload, headers)
-        registry.for(job).inject_trace_headers(job: job, payload: payload, headers: headers)
+        extension.inject_trace_headers(job: job, payload: payload, headers: headers)
       end
 
       private
 
-      def describe_span(span, extension, job)
+      def describe_span(span, job)
         span.set_description(extension.publish_description(job: job))
         span.set_origin(extension.span_origin(job: job))
         set_messaging_data(span, extension.publish_messaging_data(job: job))
-        set_retry_count(span, extension, job)
+        set_retry_count(span, job)
       end
 
       class Delegated < Producer

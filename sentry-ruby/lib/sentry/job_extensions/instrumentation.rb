@@ -13,15 +13,15 @@ module Sentry
         receive_latency: Span::DataConventions::MESSAGING_MESSAGE_RECEIVE_LATENCY
       }.freeze
 
-      attr_reader :registry
+      attr_reader :extension
 
-      def initialize(registry: Sentry.job_extensions)
-        @registry = registry
+      def initialize(extension:)
+        @extension = extension
       end
 
       private
 
-      def safely(extension, context, fallback: nil)
+      def safely(context, fallback: nil)
         yield
       rescue StandardError => e
         log_error("Job extension #{extension.name.inspect} failed to #{context}", e)
@@ -34,7 +34,7 @@ module Sentry
         end
       end
 
-      def set_retry_count(span, extension, job)
+      def set_retry_count(span, job)
         span.set_data(Span::DataConventions::MESSAGING_MESSAGE_RETRY_COUNT, extension.retry_info(job: job)[:count])
       end
 

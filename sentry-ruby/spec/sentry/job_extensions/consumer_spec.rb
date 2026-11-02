@@ -15,16 +15,12 @@ RSpec.describe Sentry::JobExtensions::Consumer do
   let(:string_io) { StringIO.new }
 
   def consumer(**hooks)
-    registry = Sentry::JobExtensions::Registry.new
-    registry.register(
-      Class.new(Sentry::JobExtensions::Extension) do
-        define_method(:handles?) { |_job| true }
-        define_method(:span_origin) { |job:| "auto.queue.test" }
-        define_method(:integration) { |job:| Sentry::TestJobsIntegration }
-        hooks.each { |hook, body| define_method(hook, &body) }
-      end.new(name: "test_backend")
-    )
-    described_class.new(registry: registry)
+    extension = Class.new(Sentry::JobExtensions::Extension) do
+      define_method(:span_origin) { |job:| "auto.queue.test" }
+      define_method(:integration) { |job:| Sentry::TestJobsIntegration }
+      hooks.each { |hook, body| define_method(hook, &body) }
+    end.new(name: "test_backend")
+    described_class.new(extension: extension)
   end
 
   def scope
