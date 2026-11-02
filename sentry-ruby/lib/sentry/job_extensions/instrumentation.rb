@@ -19,14 +19,14 @@ module Sentry
         @extension = extension
       end
 
-      private
-
       def safely(context, fallback: nil)
         yield
       rescue StandardError => e
         log_error("Job extension #{extension.name.inspect} failed to #{context}", e)
         fallback
       end
+
+      private
 
       def set_messaging_data(span, data)
         data.slice(*MESSAGING_DATA_ATTRIBUTES.keys).each do |key, value|
