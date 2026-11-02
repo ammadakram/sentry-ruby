@@ -12,10 +12,6 @@ module Sentry
         super(name: "resque")
       end
 
-      def handles?(job)
-        super && job.class.queue_adapter.class.name == ActiveJobSupport::ACTIVE_JOB_ADAPTER
-      end
-
       def scope_data(job:)
         job_data = job._sentry_job_data || {}
         context = {
@@ -64,6 +60,6 @@ module Sentry
       end
     end
 
-    Sentry.register_job_extension(ActiveJobExtension.new)
+    Sentry::Rails.register_active_job_extension(:resque, ActiveJobExtension.new)
   end
 end

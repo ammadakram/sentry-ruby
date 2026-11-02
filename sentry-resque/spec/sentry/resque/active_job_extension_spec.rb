@@ -41,22 +41,12 @@ RSpec.describe Sentry::Resque::ActiveJobExtension do
     perform_basic_setup
   end
 
-  it "should be the registered extension for ActiveJob jobs on Resque" do
-    expect(Sentry.job_extensions.for(job)).to be_a(described_class)
+  it "should be the extension for ActiveJob jobs on the Resque adapter" do
+    expect(Sentry::Rails::ActiveJobExtensions::SentryReporter.extension_for(job)).to be_a(described_class)
   end
 
-  describe "#handles?" do
-    it "should claim ActiveJob jobs when they run on the Resque adapter" do
-      expect(extension.handles?(job)).to be(true)
-    end
-
-    it "should not claim ActiveJob jobs when they run on another adapter" do
-      expect(extension.handles?(InlineExtensionJob.new)).to be(false)
-    end
-
-    it "should not claim raw Resque payloads" do
-      expect(extension.handles?(resque_payload)).to be(false)
-    end
+  it "should not be the extension for ActiveJob jobs on another adapter" do
+    expect(Sentry::Rails::ActiveJobExtensions::SentryReporter.extension_for(InlineExtensionJob.new)).not_to be_a(described_class)
   end
 
   it "should give the consumer the Resque origin" do
