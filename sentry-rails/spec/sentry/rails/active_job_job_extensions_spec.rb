@@ -35,7 +35,7 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
 
   def register_enriching_extension(adapter: :test)
     register_extension(adapter: adapter) do
-      def scope_data(job:)
+      def scope_data(job:, **)
         {
           contexts: { backend: { "jid" => "backend-jid" }, active_job: { job_id: "backend", attempt: 3 } },
           tags: { "backend.queue" => "low", queue: "backend-queue" },
@@ -43,7 +43,7 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
         }
       end
 
-      def error_data(job:, exception:)
+      def error_data(job:, exception:, **)
         {
           contexts: { backend_error: { "retried" => true }, active_job: { job_id: "backend" } },
           tags: { "backend.error" => "yes", job_id: "backend", provider_job_id: "backend" },
@@ -51,11 +51,11 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
         }
       end
 
-      def messaging_data(job:)
+      def messaging_data(job:, **)
         { system: "backend", message_id: "backend", destination: "backend", receive_latency: 42.0 }
       end
 
-      def publish_messaging_data(job:)
+      def publish_messaging_data(job:, **)
         messaging_data(job: job).merge(super)
       end
     end
@@ -120,7 +120,7 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
 
     it "still attaches ActiveJob's job data and tags to the captured event" do
       register_extension do
-        def error_data(job:, exception:)
+        def error_data(job:, exception:, **)
           { extra: { backend_attempts: 2 } }
         end
       end
@@ -146,11 +146,11 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
   describe "error data from a changing job" do
     it "keeps extension context values from before execution when the job fails" do
       register_extension do
-        def scope_data(job:)
+        def scope_data(job:, **)
           { contexts: { backend: { attempt: job.executions } } }
         end
 
-        def error_data(job:, exception:)
+        def error_data(job:, exception:, **)
           { contexts: { backend: { attempt: job.executions } } }
         end
       end
@@ -162,11 +162,11 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
   describe "error data overlapping the job's scope" do
     it "does not let the extension's error data replace tags and extra already on the job's scope" do
       register_extension do
-        def scope_data(job:)
+        def scope_data(job:, **)
           { tags: { "backend.queue" => "low" }, extra: { backend_payload_size: 12 } }
         end
 
-        def error_data(job:, exception:)
+        def error_data(job:, exception:, **)
           { tags: { "backend.queue" => "high", queue: "backend-queue" }, extra: { backend_payload_size: 99 } }
         end
       end
@@ -198,7 +198,7 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
 
       it "keeps ActiveJob's execution context alongside the extension's contexts" do
         register_extension do
-          def error_data(job:, exception:)
+          def error_data(job:, exception:, **)
             { contexts: { "rails.error" => { debug_key: "backend" }, backend_error: { "retried" => true } } }
           end
         end
@@ -243,7 +243,7 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
   describe "inherited defaults" do
     it "extends consumer metadata through super while inheriting tracing and exception reporting" do
       register_extension do
-        def messaging_data(job:)
+        def messaging_data(job:, **)
           super.merge(system: "backend")
         end
       end
@@ -276,7 +276,7 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
 
     it "replaces the user the job carries with the user the extension supplies" do
       register_extension do
-        def scope_data(job:)
+        def scope_data(job:, **)
           { user: { "id" => "backend-user", "segment" => "vip" } }
         end
       end
@@ -293,10 +293,12 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
     end
   end
 
-  describe "retry info" do
+  describe "retries" do
     def register_retrying_extension(count:, will_retry:)
       register_extension do
-        define_method(:retry_info) { |job:| { count: count, will_retry: will_retry } }
+        define_method(:messaging_data) { |job:, **| super(job: job).merge(retry_count: count) }
+        define_method(:publish_messaging_data) { |job:, **| super(job: job).merge(retry_count: count) }
+        define_method(:will_retry?) { |job:, **| will_retry }
       end
     end
 
@@ -332,8 +334,8 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
   describe "exception reporting" do
     def register_deciding_extension(report:, will_retry:)
       register_extension do
-        define_method(:retry_info) { |job:| { count: 1, will_retry: will_retry } }
-        define_method(:report_exception?) { |job:, exception:| report }
+        define_method(:will_retry?) { |job:, **| will_retry }
+        define_method(:report_exception?) { |job:, exception:, **| report }
       end
     end
 
@@ -364,7 +366,7 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
 
     def register_retry_deciding_extension(report)
       register_extension do
-        define_method(:report_retried_exception?) { |job:, exception:| report }
+        define_method(:report_retried_exception?) { |job:, exception:, **| report }
       end
     end
 
@@ -394,13 +396,13 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
 
     def register_extension_extracting(headers)
       register_extension do
-        define_method(:extract_trace_headers) { |job:, payload:| headers }
+        define_method(:extract_trace_headers) { |job:, **| headers }
       end
     end
 
     it "lets the extension carry the trace headers in the serialized payload alongside _sentry" do
       register_extension do
-        def inject_trace_headers(job:, payload:, headers:)
+        def inject_trace_headers(job:, payload:, headers:, **)
           payload.merge("backend_trace" => headers["sentry-trace"])
         end
       end
@@ -449,10 +451,10 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
     before do
       integration = backend_integration
       register_extension do
-        define_method(:transaction_name) { |job:| "Backend/#{job.class.name}" }
-        define_method(:span_origin) { |job:| "auto.queue.backend" }
-        define_method(:publish_description) { |job:| "Backend/#{job.class.name}" }
-        define_method(:integration) { |job:| integration }
+        define_method(:transaction_name) { |job:, **| "Backend/#{job.class.name}" }
+        define_method(:span_origin) { |job:, **| "auto.queue.backend" }
+        define_method(:publish_description) { |job:, **| "Backend/#{job.class.name}" }
+        define_method(:integration) { |job:, **| integration }
       end
     end
 
@@ -490,10 +492,10 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
       end
     end
 
-    it "leaves the producer span, trace headers and user to an extension that instruments enqueueing the job" do
+    it "leaves the producer span to an extension whose backend records it, while still propagating the trace and user" do
       register_extension do
-        def producer(job:)
-          Sentry::JobExtensions::Producer::Delegated.new(extension: self)
+        def record_publish_span?(job:, **)
+          false
         end
       end
       Sentry.set_user(id: "42")
@@ -501,7 +503,7 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
       within_parent_transaction { successful_job.perform_later }
 
       expect(publish_span).to be_nil
-      expect(last_enqueued_payload).not_to have_key("_sentry")
+      expect(last_enqueued_payload["_sentry"]).to include("trace_propagation_headers", "user" => { "id" => "42" })
     end
   end
 
@@ -529,9 +531,9 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
       before do
         register_extension do
           %i[
-            scope_data error_data messaging_data publish_messaging_data retry_info report_exception?
+            record_publish_span? scope_data error_data messaging_data publish_messaging_data will_retry? report_exception?
             report_retried_exception? extract_trace_headers inject_trace_headers
-            transaction_name span_origin publish_description integration producer
+            transaction_name span_origin publish_span_origin publish_description integration
           ].each do |hook|
             define_method(hook) { |**_args| raise "extension failure" }
           end
@@ -550,7 +552,7 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
         drain
 
         expect(performed.size).to eq(1)
-        expect(sdk_log.string).to include(%(Job extension "test_backend" failed to), "extension failure")
+        expect(sdk_log.string).to include(%(job extension "test_backend" failed to), "extension failure")
       end
 
       it "still captures the job's exception with ActiveJob's data and re-raises it" do

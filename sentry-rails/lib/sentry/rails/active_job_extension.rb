@@ -1,13 +1,18 @@
 # frozen_string_literal: true
 
+require "sentry/rails/serializer"
+require "sentry/rails/error_reporter_context"
+
 module Sentry
   module Rails
     class ActiveJobExtension < Sentry::JobExtensions::Extension
-      SPAN_ORIGIN = "auto.queue.active_job"
-      USER_FIELDS_ALLOWLIST = %w[id email username].freeze
+      include ErrorReporterContext
 
-      def initialize(name: "active_job")
-        super(name: name)
+      SPAN_ORIGIN = "auto.queue.active_job"
+
+      def initialize(name: "active_job", integration: Sentry::Rails, origin: SPAN_ORIGIN, serializer: Sentry::Rails::Serializer)
+        super(name: name, integration: integration, origin: origin)
+        @serializer = serializer
       end
 
       def self.adapter_name(job_class)
@@ -15,23 +20,90 @@ module Sentry
         (name || job_class.queue_adapter.class.name.demodulize.delete_suffix("Adapter").underscore).to_sym
       end
 
-      def consumer
-        @consumer ||= Sentry::JobExtensions::Consumer.new(extension: self)
+      def prepare_payload(job:, payload:)
+        sentry_data = {}
+        if Sentry.configuration.rails.active_job_propagate_traces
+          headers = Sentry.get_trace_propagation_headers
+          if headers && !headers.empty?
+            sentry_data["trace_propagation_headers"] = headers
+            payload = inject_trace_headers(job: job, payload: payload, headers: headers)
+          end
+        end
+
+        if Sentry.configuration.data_collection.user_info
+          user = Sentry.get_current_scope.user.transform_keys(&:to_s).slice(*ActiveJobExtensions::USER_FIELDS_ALLOWLIST)
+          sentry_data["user"] = user unless user.empty?
+        end
+
+        sentry_data.empty? ? payload : payload.merge(ActiveJobExtensions::SENTRY_PAYLOAD_KEY => sentry_data)
+      rescue StandardError => e
+        Sentry.sdk_logger&.error("sentry-rails: failed to inject _sentry payload: #{e.class}: #{e.message}\n  #{Array(e.backtrace).first(5).join("\n  ")}")
+        payload
       end
 
-      def producer(job:)
-        @producer ||= Producer.new(extension: self)
+      def instrument_enqueue(job:, **context, &enqueue)
+        enqueued = false
+        super(job: job, **context) do
+          enqueued = true
+          enqueue.call
+        end
+      rescue StandardError => e
+        raise if enqueued
+
+        log_failure("record producer span", e)
+        enqueue.call
       end
 
-      def extract_trace_headers(job:, payload:)
+      def start_job(scope:, job:, **context)
+        user = job._sentry&.[]("user")
+        scope.set_user(user.transform_keys(&:to_sym)) if user && !user.empty?
+        scope.set_transaction_name(job.class.name, source: :task)
+
+        super.tap { apply_active_job_context(scope, job) }
+      end
+
+      def capture_exception(job:, exception:, contexts: {}, tags: {}, extra: {}, **context)
+        data = active_job_error_data(job)
+
+        super(
+          job: job,
+          exception: exception,
+          contexts: data[:contexts].merge(contexts),
+          tags: data[:tags].merge(tags),
+          extra: data[:extra].merge(extra),
+          **context
+        )
+      end
+
+      def extract_trace_headers(job:, **)
         job._sentry&.[]("trace_propagation_headers") || {}
       end
 
-      def messaging_data(job:)
-        data = publish_messaging_data(job: job)
+      def messaging_data(job:, **context)
+        data = publish_messaging_data(job: job, **context)
         data[:receive_latency] = Sentry::Utils::Latency.milliseconds_since(job.enqueued_at) if job.respond_to?(:enqueued_at)
         data[:body_size] = body_size(job._sentry_job_data) if Sentry.get_current_scope.get_span&.sampled
         data.compact
+      end
+
+      def publish_messaging_data(job:, **)
+        name = job.class.queue_adapter_name if job.class.respond_to?(:queue_adapter_name)
+        {
+          system: name.to_s.empty? ? "activejob" : name.to_s,
+          message_id: job.job_id,
+          destination: job.queue_name,
+          retry_count: (job.executions.to_i if job.respond_to?(:executions))
+        }.compact
+      end
+
+      def report_retried_exception?(job:, exception:, **)
+        Sentry.configuration.rails.active_job_report_on_retry_error
+      end
+
+      private
+
+      def log_failure(context, error)
+        Sentry.sdk_logger&.error("sentry-rails: job extension #{name.inspect} failed to #{context}: #{error.class}: #{error.message}\n  #{Array(error.backtrace).first(5).join("\n  ")}")
       end
 
       def body_size(payload)
@@ -40,37 +112,45 @@ module Sentry
         nil
       end
 
-      def publish_messaging_data(job:)
-        name = job.class.queue_adapter_name if job.class.respond_to?(:queue_adapter_name)
+      def apply_active_job_context(scope, job)
+        required = {
+          job_class: job.class.name,
+          job_id: job.job_id,
+          queue: job.queue_name,
+          provider_job_id: job.provider_job_id
+        }
+        scope.set_contexts(active_job: scope.contexts.fetch(:active_job, {}).merge(required))
+        scope.set_tags(queue: job.queue_name)
+      end
+
+      def active_job_error_data(job)
+        queues = Sentry.configuration.data_collection.queues
+        extra = {
+          active_job: job.class.name,
+          scheduled_at: job.scheduled_at,
+          job_id: job.job_id,
+          provider_job_id: job.provider_job_id,
+          locale: job.locale
+        }
+        arguments = serialize_arguments(job.arguments) if queues
+        extra[:arguments] = arguments unless arguments.nil?
+
         {
-          system: name.to_s.empty? ? "activejob" : name.to_s,
-          message_id: job.job_id,
-          destination: job.queue_name
+          contexts: queues ? execution_context : {},
+          tags: { job_id: job.job_id, provider_job_id: job.provider_job_id },
+          extra: extra
         }
       end
 
-      def retry_info(job:)
-        { count: job.executions.to_i, will_retry: false }
-      end
-
-      def report_retried_exception?(job:, exception:)
-        Sentry.configuration.rails.active_job_report_on_retry_error
-      end
-
-      def transaction_name(job:)
-        job.class.name
-      end
-
-      def publish_description(job:)
-        job.class.name
-      end
-
-      def span_origin(job:)
-        SPAN_ORIGIN
-      end
-
-      def integration(job:)
-        Sentry::Rails
+      def serialize_arguments(arguments)
+        terms = ::Rails.application.config.filter_parameters.select do |term|
+          term.is_a?(String) || term.is_a?(Symbol) || term.is_a?(Regexp)
+        end
+        collection = Sentry::DataCollection::KeyValueCollection.new(mode: :deny_list, terms: terms)
+        @serializer.serialize(arguments, collection)
+      rescue StandardError => e
+        Sentry.sdk_logger&.error("sentry-rails: failed to serialize job arguments: #{e.class}: #{e.message}")
+        nil
       end
     end
   end
