@@ -44,18 +44,9 @@ module Sentry
       def instrument_enqueue(job:, **context, &enqueue)
         return enqueue.call unless safely("decide whether to record the producer span", fallback: true) { record_publish_span?(job: job, **context) }
 
-        enqueued = false
-        begin
-          Sentry.with_child_span(op: PUBLISH_OP) do |span|
-            safely("record the producer span") { describe_publish_span(span, job: job, **context) } if span
+        Sentry.with_child_span(op: PUBLISH_OP) do |span|
+          safely("record the producer span") { describe_publish_span(span, job: job, **context) } if span
 
-            enqueued = true
-            enqueue.call
-          end
-        rescue StandardError => e
-          raise if enqueued
-
-          log_failure("record the producer span", e)
           enqueue.call
         end
       end
