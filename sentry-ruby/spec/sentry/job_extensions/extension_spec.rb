@@ -179,6 +179,16 @@ RSpec.describe Sentry::JobExtensions::Extension do
       expect(string_io.string).to include("test_backend", "boom from instrumentation")
     end
 
+    it "enqueues the job exactly once when a data hook returns something other than a Hash" do
+      extension = build_extension(publish_messaging_data: ->(**) { nil })
+      enqueued = 0
+
+      within_transaction { extension.instrument_enqueue(job: job) { enqueued += 1 } }
+
+      expect(enqueued).to eq(1)
+      expect(publish_span).not_to be_nil
+    end
+
     it "propagates a failing enqueue" do
       expect do
         within_transaction { build_extension.instrument_enqueue(job: job) { raise "boom from enqueue" } }
@@ -242,6 +252,19 @@ RSpec.describe Sentry::JobExtensions::Extension do
 
       expect(event.contexts.dig(:trace, :op)).to eq("queue.process")
       expect(string_io.string).to include("broken scope data", "broken messaging data")
+    end
+
+    it "starts the transaction when data hooks return something other than a Hash" do
+      extension = build_extension(
+        scope_data: ->(**) { nil },
+        extract_trace_headers: ->(**) { nil },
+        messaging_data: ->(**) { "not a hash" }
+      )
+
+      event = finished_job(extension)
+
+      expect(event.contexts.dig(:trace, :op)).to eq("queue.process")
+      expect(string_io.string).to include("failed to collect the messaging data")
     end
 
     it "continues the trace described by the extracted trace headers" do
@@ -379,6 +402,13 @@ RSpec.describe Sentry::JobExtensions::Extension do
       expect(event.exception.values.last.mechanism.type).to eq("test_jobs")
       expect(event.tags).to include(job_id: "caller")
       expect(string_io.string).to include("broken error data")
+    end
+
+    it "captures the exception with the caller's data when the error data hook returns something other than a Hash" do
+      event = capture(build_extension(error_data: ->(**) { nil }), tags: { job_id: "caller" })
+
+      expect(event.exception.values.last.type).to eq("RuntimeError")
+      expect(event.tags).to include(job_id: "caller")
     end
   end
 end

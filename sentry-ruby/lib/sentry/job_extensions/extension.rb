@@ -48,7 +48,7 @@ module Sentry
           if span
             span.set_description(safely("describe the producer span") { publish_description(job: job, **context) })
             span.set_origin(safely("set the producer span origin", fallback: @origin) { publish_span_origin(job: job, **context) })
-            set_messaging_data(span, safely("collect the producer messaging data", fallback: {}) { publish_messaging_data(job: job, **context) })
+            set_messaging_data(span, safely("collect the producer messaging data", fallback: {}) { Hash(publish_messaging_data(job: job, **context)) })
           end
 
           enqueue.call
@@ -56,18 +56,18 @@ module Sentry
       end
 
       def start_job(scope:, job:, **context)
-        apply_scope_data(scope, safely("collect the scope data", fallback: {}) { scope_data(job: job, **context) })
+        apply_scope_data(scope, safely("collect the scope data", fallback: {}) { Hash(scope_data(job: job, **context)) })
 
         job_name = safely("name the transaction") { transaction_name(job: job, **context) }
         scope.set_transaction_name(job_name, source: :task) if job_name
 
-        trace_headers = safely("extract trace headers", fallback: {}) { extract_trace_headers(job: job, **context) }
+        trace_headers = safely("extract trace headers", fallback: {}) { Hash(extract_trace_headers(job: job, **context)) }
         origin = safely("set the transaction origin", fallback: @origin) { span_origin(job: job, **context) }
         transaction = start_transaction(scope, trace_headers, origin)
         return unless transaction
 
         scope.set_span(transaction)
-        set_messaging_data(transaction, safely("collect the messaging data", fallback: {}) { messaging_data(job: job, **context) })
+        set_messaging_data(transaction, safely("collect the messaging data", fallback: {}) { Hash(messaging_data(job: job, **context)) })
         transaction
       end
 
@@ -79,7 +79,7 @@ module Sentry
       end
 
       def capture_exception(job:, exception:, contexts: {}, tags: {}, extra: {}, **context)
-        data = safely("collect the error data", fallback: {}) { error_data(job: job, exception: exception, **context) }
+        data = safely("collect the error data", fallback: {}) { Hash(error_data(job: job, exception: exception, **context)) }
         capturing_integration = safely("pick the capturing integration", fallback: @integration) { integration(job: job, **context) }
 
         capturing_integration.capture_exception(exception, **merged_error_data(data, contexts: contexts, tags: tags, extra: extra))
