@@ -294,16 +294,5 @@ RSpec.describe Sentry::JobExtensions::Consumer do
       expect(event.tags).to include(job_id: "caller", "backend.error" => "yes")
       expect(event.extra).to include(attempts: 5)
     end
-
-    it "lets caller tags and extra override extension values with equivalent string or symbol keys" do
-      event = capture(error_consumer, tags: { "job_id" => "caller", :"backend.error" => "caller-error" }, extra: { "attempts" => 5 })
-
-      expect(event.tags).to eq(job_id: "caller", queue: "backend-queue", "backend.error" => "caller-error")
-      expect(event.extra).to eq(attempts: 5, size: 99)
-      expect(event.to_json_compatible).to include(
-        "tags" => { "job_id" => "caller", "queue" => "backend-queue", "backend.error" => "caller-error" },
-        "extra" => { "attempts" => 5, "size" => 99 }
-      )
-    end
   end
 end

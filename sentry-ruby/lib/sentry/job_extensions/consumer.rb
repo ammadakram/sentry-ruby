@@ -57,11 +57,11 @@ module Sentry
         error_data = additive_error_data(extension.error_data(job: job, exception: exception))
 
         options = {
-          extra: error_data[:extra].merge(matching_keys(extra, error_data[:extra])),
-          tags: error_data[:tags].merge(matching_keys(tags, error_data[:tags])),
+          extra: error_data[:extra].merge(extra),
+          tags: error_data[:tags].merge(tags),
           hint: { background: false }
         }
-        contexts = error_data[:contexts].merge(matching_keys(contexts, error_data[:contexts]))
+        contexts = error_data[:contexts].merge(contexts)
         options[:contexts] = contexts unless contexts.empty?
 
         extension.integration(job: job).capture_exception(exception, **options)
@@ -73,19 +73,10 @@ module Sentry
         scope = Sentry.get_current_scope
 
         {
-          contexts: matching_keys(data.fetch(:contexts, {}), scope.contexts).to_h do |name, context|
-            scope_context = scope.contexts.fetch(name, {})
-            context = matching_keys(context, scope_context)
-            [name, context.merge(scope_context)]
-          end,
-          tags: matching_keys(data.fetch(:tags, {}), scope.tags).reject { |key, _value| scope.tags.key?(key) },
-          extra: matching_keys(data.fetch(:extra, {}), scope.extra).reject { |key, _value| scope.extra.key?(key) }
+          contexts: data.fetch(:contexts, {}).to_h { |name, context| [name, context.merge(scope.contexts.fetch(name, {}))] },
+          tags: data.fetch(:tags, {}).reject { |key, _value| scope.tags.key?(key) },
+          extra: data.fetch(:extra, {}).reject { |key, _value| scope.extra.key?(key) }
         }
-      end
-
-      def matching_keys(data, reference)
-        keys = reference.keys.to_h { |key| [key.to_s, key] }
-        data.transform_keys { |key| keys.fetch(key.to_s, key) }
       end
     end
   end
