@@ -93,6 +93,24 @@ RSpec.describe "ActiveJob jobs on Sidekiq when the Sidekiq adapter is not skippa
     expect(errors.first.contexts[:sidekiq]).to include("jid" => message["jid"], "queue" => "events")
   end
 
+  it "reports an error that retry_on retries when active_job_report_on_retry_error is enabled" do
+    stub_const("RetryingJob", Class.new(ActiveJob::Base) do
+      self.queue_adapter = :sidekiq
+      queue_as :events
+      retry_on StandardError, attempts: 2, wait: 0
+
+      def perform(*)
+        raise "job failed on its first attempt"
+      end
+    end)
+    Sentry.configuration.rails.active_job_report_on_retry_error = true
+
+    errors = deliver(sidekiq_message(RetryingJob)).grep(Sentry::ErrorEvent)
+    Sidekiq::Queue.new("events").clear
+
+    expect(errors.map { |error| error.exception.values.first.value }).to include(/job failed on its first attempt/)
+  end
+
   it "continues the trace of the transaction that enqueued the job" do
     queue = Sidekiq::Queue.new("events")
     queue.clear

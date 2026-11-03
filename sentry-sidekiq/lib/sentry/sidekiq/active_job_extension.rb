@@ -16,10 +16,6 @@ module Sentry
       def transaction_name(job:, **)
         "#{JobExtension::SIDEKIQ_NAME}/#{super}"
       end
-
-      def report_retried_exception?(job:, exception:, **)
-        false
-      end
     end
 
     Sentry::Rails.register_active_job_extension(:sidekiq, ActiveJobExtension.new)

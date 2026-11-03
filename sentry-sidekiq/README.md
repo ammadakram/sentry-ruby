@@ -46,5 +46,3 @@ end
 ```
 
 The choice is made once, when the Rails app boots. Once opted in, `sentry-rails` reports those jobs under Sidekiq's transaction names and span origin, and `sentry-sidekiq` only reports errors raised before an ActiveJob job starts, such as a job class that can no longer be loaded. Sidekiq's own retry count is not recorded for those jobs, and `config.sidekiq.report_after_job_retries`, `config.sidekiq.report_only_dead_jobs` and the `attempt_threshold` job option only apply to the errors `sentry-sidekiq` reports. Plain Sidekiq jobs are not affected.
-
-Errors from ActiveJob jobs on Sidekiq that `retry_on` retries are not reported, regardless of `config.rails.active_job_report_on_retry_error`.
