@@ -45,20 +45,30 @@ module Sentry
         return enqueue.call unless safely("decide whether to record the producer span", fallback: true) { record_publish_span?(job: job, **context) }
 
         Sentry.with_child_span(op: PUBLISH_OP) do |span|
-          safely("record the producer span") { describe_publish_span(span, job: job, **context) } if span
+          if span
+            span.set_description(safely("describe the producer span") { publish_description(job: job, **context) })
+            span.set_origin(safely("set the producer span origin", fallback: @origin) { publish_span_origin(job: job, **context) })
+            set_messaging_data(span, safely("collect the producer messaging data", fallback: {}) { publish_messaging_data(job: job, **context) })
+          end
 
           enqueue.call
         end
       end
 
       def start_job(scope:, job:, **context)
-        safely("apply scope data") { apply_scope_data(scope, scope_data(job: job, **context)) }
+        apply_scope_data(scope, safely("collect the scope data", fallback: {}) { scope_data(job: job, **context) })
 
         job_name = safely("name the transaction") { transaction_name(job: job, **context) }
         scope.set_transaction_name(job_name, source: :task) if job_name
 
         trace_headers = safely("extract trace headers", fallback: {}) { extract_trace_headers(job: job, **context) }
-        safely("start the transaction") { start_transaction(scope, trace_headers, job: job, **context) }
+        origin = safely("set the transaction origin", fallback: @origin) { span_origin(job: job, **context) }
+        transaction = start_transaction(scope, trace_headers, origin)
+        return unless transaction
+
+        scope.set_span(transaction)
+        set_messaging_data(transaction, safely("collect the messaging data", fallback: {}) { messaging_data(job: job, **context) })
+        transaction
       end
 
       def finish_job(transaction:, status:)
@@ -69,14 +79,10 @@ module Sentry
       end
 
       def capture_exception(job:, exception:, contexts: {}, tags: {}, extra: {}, **context)
-        captured = safely("capture the job exception", fallback: false) do
-          data = merged_error_data(error_data(job: job, exception: exception, **context), contexts: contexts, tags: tags, extra: extra)
-          integration(job: job, **context).capture_exception(exception, **data)
-          true
-        end
-        return if captured
+        data = safely("collect the error data", fallback: {}) { error_data(job: job, exception: exception, **context) }
+        capturing_integration = safely("pick the capturing integration", fallback: @integration) { integration(job: job, **context) }
 
-        @integration.capture_exception(exception, **capture_options(contexts: contexts, tags: tags, extra: extra))
+        capturing_integration.capture_exception(exception, **merged_error_data(data, contexts: contexts, tags: tags, extra: extra))
       end
 
       def safely(context, fallback: nil)
@@ -231,31 +237,19 @@ module Sentry
 
       private
 
-      def describe_publish_span(span, job:, **context)
-        span.set_description(publish_description(job: job, **context))
-        span.set_origin(publish_span_origin(job: job, **context))
-        set_messaging_data(span, publish_messaging_data(job: job, **context))
-      end
-
-      def start_transaction(scope, trace_headers, job:, **context)
+      def start_transaction(scope, trace_headers, origin)
         options = {
           name: scope.transaction_name,
           source: scope.transaction_source,
           op: PROCESS_OP,
-          origin: span_origin(job: job, **context)
+          origin: origin
         }
 
-        transaction = if trace_headers.empty?
+        if trace_headers.empty?
           Sentry.start_transaction(**options)
         else
           Sentry.start_transaction(transaction: Sentry.continue_trace(trace_headers, **options), **options)
         end
-        return unless transaction
-
-        scope.set_span(transaction)
-        safely("record the messaging data") { set_messaging_data(transaction, messaging_data(job: job, **context)) }
-
-        transaction
       end
 
       def apply_scope_data(scope, data)
@@ -274,16 +268,13 @@ module Sentry
       def merged_error_data(data, contexts:, tags:, extra:)
         scope = Sentry.get_current_scope
 
-        capture_options(
-          contexts: data.fetch(:contexts, {}).to_h { |context_name, context| [context_name, context.merge(scope.contexts.fetch(context_name, {}))] }.merge(contexts),
+        merged_contexts = data.fetch(:contexts, {}).to_h { |context_name, context| [context_name, context.merge(scope.contexts.fetch(context_name, {}))] }.merge(contexts)
+        options = {
+          extra: data.fetch(:extra, {}).reject { |key, _value| scope.extra.key?(key) }.merge(extra),
           tags: data.fetch(:tags, {}).reject { |key, _value| scope.tags.key?(key) }.merge(tags),
-          extra: data.fetch(:extra, {}).reject { |key, _value| scope.extra.key?(key) }.merge(extra)
-        )
-      end
-
-      def capture_options(contexts:, tags:, extra:)
-        options = { extra: extra, tags: tags, hint: { background: false } }
-        options[:contexts] = contexts unless contexts.empty?
+          hint: { background: false }
+        }
+        options[:contexts] = merged_contexts unless merged_contexts.empty?
         options
       end
 
