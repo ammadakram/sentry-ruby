@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require "sentry/rails/active_job_extension"
-require "sentry/resque/active_job_support"
+require "sentry/resque/active_job_support/reporter"
 
 module Sentry
   module Resque

@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "sentry/resque/active_job_support"
+require "sentry/resque/active_job_support/reporter"
 
 module Sentry
   module Resque
@@ -16,7 +16,7 @@ module Sentry
         next unless defined?(::Sentry::Rails) && Sentry::Rails.active_job_owns_adapter?(ActiveJobSupport::ACTIVE_JOB_ADAPTER)
 
         require "sentry/resque/active_job_extension"
-        SentryReporter.singleton_class.prepend(ActiveJobSupport)
+        SentryReporter.singleton_class.prepend(ActiveJobSupport::Reporter)
       end
     end
   end
