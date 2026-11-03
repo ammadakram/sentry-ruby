@@ -3,15 +3,14 @@
 module Sentry
   module Rails
     module Serializer
-      def self.serialize(value, collection = nil)
+      def self.serialize(value)
         case value
         when Range
-          serialize_range(value, collection)
+          serialize_range(value)
         when Hash
-          value = collection.filter(value, cookie: false) if collection
-          value.transform_values { |item| serialize(item, collection) }
+          value.transform_values { |item| serialize(item) }
         when Array, Enumerable
-          value.map { |item| serialize(item, collection) }
+          value.map { |item| serialize(item) }
         when ->(item) { item.respond_to?(:to_global_id) }
           serialize_global_id(value)
         else
@@ -25,11 +24,11 @@ module Sentry
         value
       end
 
-      def self.serialize_range(range, collection = nil)
+      def self.serialize_range(range)
         return range.to_s if range.begin.nil? || range.end.nil?
         return range.to_s if range.begin.is_a?(::ActiveSupport::TimeWithZone)
 
-        range.map { |item| serialize(item, collection) }
+        range.map { |item| serialize(item) }
       end
     end
   end

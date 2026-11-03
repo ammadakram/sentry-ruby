@@ -143,11 +143,7 @@ module Sentry
       end
 
       def serialize_arguments(arguments)
-        terms = ::Rails.application.config.filter_parameters.select do |term|
-          term.is_a?(String) || term.is_a?(Symbol) || term.is_a?(Regexp)
-        end
-        collection = Sentry::DataCollection::KeyValueCollection.new(mode: :deny_list, terms: terms)
-        @serializer.serialize(arguments, collection)
+        @serializer.serialize(arguments)
       rescue StandardError => e
         Sentry.sdk_logger&.error("sentry-rails: failed to serialize job arguments: #{e.class}: #{e.message}")
         nil

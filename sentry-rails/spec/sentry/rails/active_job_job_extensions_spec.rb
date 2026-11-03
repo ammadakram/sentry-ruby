@@ -135,7 +135,7 @@ RSpec.describe "Sentry + ActiveJob with a registered job extension", type: :job 
         backend_attempts: 2,
         active_job: failing_job.name,
         locale: "en",
-        arguments: [{ password: "[Filtered]", delivery_id: "delivery-42" }]
+        arguments: [{ password: "example-password", delivery_id: "delivery-42" }]
       )
       expect(event.extra[:job_id]).not_to be_nil
       expect(event.extra.keys).to include(:provider_job_id, :scheduled_at)
