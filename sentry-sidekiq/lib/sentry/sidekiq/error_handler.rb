@@ -22,12 +22,13 @@ module Sentry
         return unless Sentry.initialized?
 
         scope = Sentry.get_current_scope
-        scope.set_transaction_name(@extension.error_context_transaction_name(context), source: :task) unless scope.transaction_name
+        scope.set_transaction_name(ContextFilter.new(context).transaction_name, source: :task) unless scope.transaction_name
 
         job = context[:job]
-        return unless @extension.report_exception?(job: job, exception: ex, sidekiq_config: sidekiq_config)
+        extension = Sentry::Sidekiq.job_extension_for(job, default: @extension)
+        return unless extension.report_exception?(job: job, exception: ex, sidekiq_config: sidekiq_config)
 
-        @extension.capture_exception(job: job, exception: ex, contexts: { sidekiq: ContextFilter.new(context).filtered })
+        extension.capture_exception(job: job, exception: ex, contexts: { sidekiq: extension.error_context(context) })
       ensure
         scope&.clear
       end

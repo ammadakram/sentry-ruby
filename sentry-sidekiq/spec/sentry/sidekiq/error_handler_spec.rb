@@ -75,20 +75,18 @@ RSpec.describe Sentry::Sidekiq::ErrorHandler do
     expect(event[:contexts][:sidekiq]).to eq(context)
   end
 
-  it "filters out ActiveJob keys" do
+  it "filters out ActiveJob keys from an ActiveJob job" do
     require "active_job"
     exception = build_exception
-    aj_context = context
-    aj_context["_aj_globalid"] = GlobalID.new('gid://app/model/id')
-    expected_context = aj_context.dup
-    expected_context.delete("_aj_globalid")
-    expected_context["globalid"] = "gid://app/model/id"
+    aj_job = context.merge("wrapped" => "HardJob", "_aj_globalid" => GlobalID.new('gid://app/model/id'))
+    expected_context = aj_job.reject { |key, _value| key == "_aj_globalid" }.merge(context: "Job raised exception", "globalid" => "gid://app/model/id")
 
-    subject.call(exception, aj_context)
+    subject.call(exception, { context: "Job raised exception", job: aj_job })
 
     expect(transport.events.count).to eq(1)
     event = transport.events.first.to_h
     expect(event[:contexts][:sidekiq]).to eq(expected_context)
+    expect(event[:transaction]).to eq("Sidekiq/HardJob")
   end
 
   context "when the extension handling the job raises" do

@@ -7,7 +7,7 @@ module Sentry
 
       module ServerMiddleware
         def call(worker, job, queue)
-          return yield if job["wrapped"]
+          return yield if ActiveJobSupport.handles?(job)
 
           super
         end

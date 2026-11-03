@@ -25,11 +25,8 @@ module Sentry
         @serializer = serializer
       end
 
-      def error_context_transaction_name(context)
-        job = context["wrapped"] || context["class"] ? context : context[:job]
-        return transaction_name(job: job) if job_class(job)
-
-        context[:event] ? "#{SIDEKIQ_NAME}/#{context[:event]}" : SIDEKIQ_NAME
+      def error_context(context)
+        ContextFilter.new(context).filtered
       end
 
       def scope_data(job:, **)
@@ -91,7 +88,7 @@ module Sentry
       private
 
       def job_class(job)
-        job["wrapped"] || job["class"] if job.is_a?(Hash)
+        job["class"] if job.is_a?(Hash)
       end
 
       def job_tags(job)

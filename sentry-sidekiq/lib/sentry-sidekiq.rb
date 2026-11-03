@@ -6,6 +6,7 @@ require "sentry/integrable"
 require "sentry/sidekiq/version"
 require "sentry/sidekiq/configuration"
 require "sentry/sidekiq/job_extension"
+require "sentry/sidekiq/active_job_support/job_extension"
 require "sentry/sidekiq/error_handler"
 require "sentry/sidekiq/sentry_context_middleware"
 
@@ -17,6 +18,14 @@ module Sentry
 
     def self.job_extension
       @job_extension ||= JobExtension.new
+    end
+
+    def self.active_job_extension
+      @active_job_extension ||= ActiveJobSupport::JobExtension.new
+    end
+
+    def self.job_extension_for(job, default: job_extension)
+      ActiveJobSupport.handles?(job) ? active_job_extension : default
     end
   end
 end
