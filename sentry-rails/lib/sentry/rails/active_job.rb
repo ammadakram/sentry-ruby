@@ -232,12 +232,8 @@ module Sentry
               queue: job.queue_name,
               provider_job_id: job.provider_job_id
             }
-            context = (scope.contexts.delete("active_job") || {}).merge(scope.contexts.delete(:active_job) || {})
-            keys = required.keys.to_h { |key| [key.to_s, key] }
-            context = context.transform_keys { |key| keys.fetch(key.to_s, key) }
-            scope.set_context(:active_job, context.merge(required))
-            scope.tags.delete("queue")
-            scope.set_tag(:queue, job.queue_name)
+            scope.set_contexts(active_job: scope.contexts.fetch(:active_job, {}).merge(required))
+            scope.set_tags(queue: job.queue_name)
           end
 
           def with_isolated_scope(&block)
