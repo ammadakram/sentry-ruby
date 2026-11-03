@@ -58,8 +58,7 @@ module Sentry
 
         class << self
           def prepare_payload(job, payload)
-            extension = Sentry::Rails.active_job_extension_for(job.class)
-            extension.safely("inject _sentry payload", fallback: payload) { extension.prepare_payload(job: job, payload: payload) }
+            Sentry::Rails.active_job_extension_for(job.class).prepare_payload(job: job, payload: payload)
           end
 
           def producer_callback_registered?
