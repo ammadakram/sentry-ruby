@@ -57,16 +57,8 @@ module Sentry
         }
 
         class << self
-          def default_extension
-            @default_extension ||= ActiveJobExtension.new
-          end
-
-          def extension_for(job)
-            Sentry::Rails.active_job_extensions.fetch(ActiveJobExtension.adapter_name(job.class), default_extension)
-          end
-
           def prepare_payload(job, payload)
-            extension = extension_for(job)
+            extension = Sentry::Rails.active_job_extension_for(job.class)
             extension.safely("inject _sentry payload", fallback: payload) { extension.prepare_payload(job: job, payload: payload) }
           end
 
@@ -81,7 +73,7 @@ module Sentry
           def record_producer_span(job, &enqueue)
             return yield if !Sentry.initialized? || job.already_supported_by_sentry_integration?
 
-            extension_for(job).instrument_enqueue(job: job, &enqueue)
+            Sentry::Rails.active_job_extension_for(job.class).instrument_enqueue(job: job, &enqueue)
           end
 
           def record(job, &block)
@@ -91,7 +83,7 @@ module Sentry
           end
 
           def record_in_scope(scope, job)
-            extension = extension_for(job)
+            extension = Sentry::Rails.active_job_extension_for(job.class)
             transaction = nil
 
             begin
@@ -112,7 +104,7 @@ module Sentry
           end
 
           def capture_exception(job, e)
-            extension_for(job).capture_exception(job: job, exception: e)
+            Sentry::Rails.active_job_extension_for(job.class).capture_exception(job: job, exception: e)
           end
 
           def register_event_handlers
@@ -136,7 +128,7 @@ module Sentry
               return if error.nil?
               return if !Sentry.initialized? || job.already_supported_by_sentry_integration?
 
-              extension = extension_for(job)
+              extension = Sentry::Rails.active_job_extension_for(job.class)
               report = extension.safely("decide whether to report the retried exception", fallback: Sentry.configuration.rails.active_job_report_on_retry_error) do
                 extension.report_retried_exception?(job: job, exception: error)
               end

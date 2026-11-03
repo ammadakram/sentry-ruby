@@ -16,6 +16,9 @@ module Sentry
     extend Integrable
     register_integration name: "rails", version: Sentry::Rails::VERSION
 
+    DEFAULT_ACTIVE_JOB_EXTENSION = ActiveJobExtension.new
+    private_constant :DEFAULT_ACTIVE_JOB_EXTENSION
+
     # Returns whether sentry-rails' ActiveJob integration reports jobs run
     # through the given queue adapter.
     #
@@ -54,6 +57,10 @@ module Sentry
       end
 
       active_job_extensions[adapter.to_sym] = extension
+    end
+
+    def self.active_job_extension_for(job_class)
+      active_job_extensions.fetch(ActiveJobExtension.adapter_name(job_class), DEFAULT_ACTIVE_JOB_EXTENSION)
     end
 
     # @return [Hash{Symbol => ActiveJobExtension}] the registered extensions,
