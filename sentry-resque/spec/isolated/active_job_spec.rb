@@ -22,7 +22,6 @@ RSpec.describe "ActiveJob jobs on Resque with sentry-resque loaded", type: :job 
 
   let(:job_span_origin) { "auto.queue.resque" }
   let(:skipped_adapter_error_events) { 1 }
-  let(:reports_retried_exceptions) { false }
 
   def expected_message_body_size(delivered_job_data)
     Resque.encode("class" => ActiveJob::QueueAdapters::ResqueAdapter::JobWrapper.name, "args" => [delivered_job_data]).bytesize

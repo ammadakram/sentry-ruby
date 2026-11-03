@@ -54,5 +54,3 @@ end
 ```
 
 The choice is made once, when the Rails app boots. Once opted in, `sentry-rails` reports those jobs with Resque data: the `resque.queue` tag, the `Active-Job` context, and the `messaging.*` span data for the Resque queue. `sentry-resque` only reports errors raised before an ActiveJob job starts, such as a job class that can no longer be loaded. Plain Resque jobs are not affected.
-
-Errors from ActiveJob jobs on Resque that `retry_on` retries are not reported, regardless of `config.rails.active_job_report_on_retry_error`.

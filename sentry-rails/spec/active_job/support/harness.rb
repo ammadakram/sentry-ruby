@@ -19,7 +19,6 @@ RSpec.shared_context "active_job backend harness" do |adapter:|
   let(:sentry_test_config) { nil }
   let(:job_span_origin) { "auto.queue.active_job" }
   let(:skipped_adapter_error_events) { 0 }
-  let(:reports_retried_exceptions) { true }
 
   # Canonical job fixtures shared by every backend's example suite. Specs
   # that need a custom body (e.g. local variables in the failing frame)

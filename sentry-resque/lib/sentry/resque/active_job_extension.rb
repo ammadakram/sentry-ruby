@@ -40,10 +40,6 @@ module Sentry
         }.compact
       end
 
-      def report_retried_exception?(job:, exception:, **)
-        false
-      end
-
       private
 
       def body_size(job_data)
