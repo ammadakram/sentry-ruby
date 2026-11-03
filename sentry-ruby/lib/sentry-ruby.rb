@@ -31,7 +31,7 @@ require "sentry/cron/fugit_schedule"
 require "sentry/cron/slug"
 require "sentry/vernier/profiler"
 require "sentry/metrics"
-require "sentry/job_extensions"
+require "sentry/job_extensions/extension"
 
 [
   "sentry/rake",
