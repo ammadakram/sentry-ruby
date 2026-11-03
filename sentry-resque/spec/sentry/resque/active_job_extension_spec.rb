@@ -42,11 +42,11 @@ RSpec.describe Sentry::Resque::ActiveJobExtension do
   end
 
   it "should be the extension for ActiveJob jobs on the Resque adapter" do
-    expect(Sentry::Rails::ActiveJobExtensions::SentryReporter.extension_for(job)).to be_a(described_class)
+    expect(Sentry::Rails.active_job_extension_for(job.class)).to be_a(described_class)
   end
 
   it "should not be the extension for ActiveJob jobs on another adapter" do
-    expect(Sentry::Rails::ActiveJobExtensions::SentryReporter.extension_for(InlineExtensionJob.new)).not_to be_a(described_class)
+    expect(Sentry::Rails.active_job_extension_for(InlineExtensionJob)).not_to be_a(described_class)
   end
 
   it "should give the consumer the Resque origin" do

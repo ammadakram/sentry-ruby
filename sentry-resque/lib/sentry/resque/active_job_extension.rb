@@ -8,11 +8,11 @@ module Sentry
     class ActiveJobExtension < Sentry::Rails::ActiveJobExtension
       SPAN_ORIGIN = "auto.queue.resque"
 
-      def initialize
-        super(name: "resque")
+      def initialize(name: "resque", integration: Sentry::Resque, origin: SPAN_ORIGIN, **dependencies)
+        super(name: name, integration: integration, origin: origin, **dependencies)
       end
 
-      def scope_data(job:)
+      def scope_data(job:, **)
         job_data = job._sentry_job_data || {}
         context = {
           job_class: job.class.name,
@@ -28,26 +28,19 @@ module Sentry
         { contexts: { "Active-Job": context }, tags: { "resque.queue" => job.queue_name } }
       end
 
-      def messaging_data(job:)
+      def messaging_data(job:, **)
         job_data = job._sentry_job_data
         {
           system: name,
           message_id: job.job_id,
           destination: job.queue_name,
+          retry_count: (job.executions.to_i if job.respond_to?(:executions)),
           body_size: body_size(job_data),
           receive_latency: Sentry::Utils::Latency.milliseconds_since(job_data&.[]("enqueued_at"))
         }.compact
       end
 
-      def span_origin(job:)
-        SPAN_ORIGIN
-      end
-
-      def integration(job:)
-        Sentry::Resque
-      end
-
-      def report_retried_exception?(job:, exception:)
+      def report_retried_exception?(job:, exception:, **)
         false
       end
 
