@@ -1,16 +1,15 @@
 # frozen_string_literal: true
 
 require "sentry/sidekiq/context_filter"
-require "sentry/sidekiq/failure_reporting"
 require "sentry/sidekiq/sentry_context_middleware"
 
 module Sentry
   module Sidekiq
     class ErrorHandler
-      def initialize(failure_reporting: FailureReporting.new, consumer: SentryContextServerMiddleware.consumer, job_extension: Sentry::Sidekiq.job_extension)
-        @failure_reporting = failure_reporting
-        @consumer = consumer
-        @job_extension = job_extension
+      WITH_SIDEKIQ_7 = ::Gem::Version.new(::Sidekiq::VERSION) >= ::Gem::Version.new("7.0")
+
+      def initialize(extension = Sentry::Sidekiq.job_extension)
+        @extension = extension
       end
 
       # @param ex [Exception] the exception / error that occured
@@ -23,17 +22,12 @@ module Sentry
         return unless Sentry.initialized?
 
         scope = Sentry.get_current_scope
-        scope.set_transaction_name(@job_extension.error_context_transaction_name(context), source: :task) unless scope.transaction_name
+        scope.set_transaction_name(@extension.error_context_transaction_name(context), source: :task) unless scope.transaction_name
 
         job = context[:job]
-        return unless @failure_reporting.report?(job, sidekiq_config)
+        return unless @extension.report_exception?(job: job, exception: ex, sidekiq_config: sidekiq_config)
 
-        contexts = { sidekiq: ContextFilter.new(context).filtered }
-        captured = @consumer.safely("capture the job exception", fallback: false) do
-          @consumer.capture_exception(job, ex, contexts: contexts)
-          true
-        end
-        Sentry::Sidekiq.capture_exception(ex, contexts: contexts, hint: { background: false }) unless captured
+        @extension.capture_exception(job: job, exception: ex, contexts: { sidekiq: ContextFilter.new(context).filtered })
       ensure
         scope&.clear
       end

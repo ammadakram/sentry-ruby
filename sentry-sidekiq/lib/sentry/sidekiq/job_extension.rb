@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "sentry/sidekiq/retry_policy"
+require "sentry/sidekiq/failure_reporting"
 require "sentry/sidekiq/context_filter"
 
 module Sentry
@@ -10,9 +11,18 @@ module Sentry
       SIDEKIQ_NAME = "Sidekiq"
       ENQUEUED_AT_IN_MILLISECONDS = ::Gem::Version.new(::Sidekiq::VERSION) >= ::Gem::Version.new("8.0.0")
 
-      def initialize(name: "sidekiq", retry_policy: RetryPolicy.build)
-        super(name: name)
+      def initialize(
+        name: "sidekiq",
+        integration: Sentry::Sidekiq,
+        origin: SPAN_ORIGIN,
+        retry_policy: RetryPolicy.build,
+        failure_reporting: FailureReporting.new(retry_policy: retry_policy),
+        serializer: ::Sidekiq
+      )
+        super(name: name, integration: integration, origin: origin)
         @retry_policy = retry_policy
+        @failure_reporting = failure_reporting
+        @serializer = serializer
       end
 
       def error_context_transaction_name(context)
@@ -22,11 +32,9 @@ module Sentry
         context[:event] ? "#{SIDEKIQ_NAME}/#{context[:event]}" : SIDEKIQ_NAME
       end
 
-      def scope_data(job:)
-        return {} unless sidekiq_job?(job)
-
+      def scope_data(job:, **)
         data = {
-          contexts: { sidekiq: ContextFilter.new(job).filtered },
+          contexts: { sidekiq: job },
           tags: { queue: job["queue"], jid: job["jid"] }.merge(job_tags(job))
         }
         user = job["sentry_user"]
@@ -34,69 +42,53 @@ module Sentry
         data
       end
 
-      def messaging_data(job:)
-        return {} unless sidekiq_job?(job)
-
+      def messaging_data(job:, **)
         {
           system: name,
           message_id: job["jid"],
           destination: job["queue"],
           receive_latency: receive_latency(job),
+          retry_count: @retry_policy.retry_count(job) || 0,
           body_size: body_size(job)
         }.compact
       end
 
-      def publish_messaging_data(job:)
-        return {} unless sidekiq_job?(job)
-
+      def publish_messaging_data(job:, **)
         { system: name, message_id: job["jid"], destination: job["queue"] }
       end
 
-      def retry_info(job:)
-        return super unless sidekiq_job?(job)
-
-        { count: @retry_policy.retry_count(job) || 0, will_retry: @retry_policy.will_retry?(job) }
+      def will_retry?(job:, **)
+        @retry_policy.will_retry?(job)
       end
 
-      def inject_trace_headers(job:, payload:, headers:)
-        return payload unless sidekiq_job?(payload)
+      def report_exception?(job:, exception:, sidekiq_config: nil, **)
+        @failure_reporting.report?(job, sidekiq_config)
+      end
+
+      def inject_trace_headers(job:, payload:, headers:, **)
         return payload if payload["trace_propagation_headers"]
 
         payload.merge("trace_propagation_headers" => headers)
       end
 
-      def extract_trace_headers(job:, payload:)
-        return {} unless sidekiq_job?(payload)
-
-        payload["trace_propagation_headers"] || {}
+      def extract_trace_headers(job:, **)
+        job["trace_propagation_headers"] || {}
       end
 
-      def transaction_name(job:)
+      def transaction_name(job:, **)
         name = job_class(job)
         name ? "#{SIDEKIQ_NAME}/#{name}" : SIDEKIQ_NAME
       end
 
-      def publish_description(job:)
+      def publish_description(job:, **)
         job["class"].to_s
       end
 
-      def span_origin(job:)
-        SPAN_ORIGIN
-      end
-
-      def integration(job:)
-        Sentry::Sidekiq
-      end
-
-      def producer(job:)
-        @producer ||= Sentry::JobExtensions::Producer::Delegated.new(extension: self)
+      def publish_span_origin(job:, **)
+        Span::DEFAULT_SPAN_ORIGIN
       end
 
       private
-
-      def sidekiq_job?(job)
-        job.is_a?(Hash) && job.key?("jid")
-      end
 
       def job_class(job)
         job["wrapped"] || job["class"] if job.is_a?(Hash)
@@ -107,7 +99,7 @@ module Sentry
       end
 
       def body_size(job)
-        ::Sidekiq.dump_json(job).bytesize
+        @serializer.dump_json(job).bytesize
       rescue StandardError
         nil
       end

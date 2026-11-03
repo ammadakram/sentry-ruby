@@ -13,7 +13,7 @@ RSpec.shared_context "sidekiq", shared_context: :metadata do
     Class.new(Sentry::Sidekiq::JobExtension) do
       %i[
         scope_data transaction_name extract_trace_headers inject_trace_headers messaging_data
-        publish_messaging_data publish_description retry_info span_origin
+        publish_messaging_data publish_description publish_span_origin will_retry? span_origin
       ].each do |hook|
         define_method(hook) { |**| raise "extension failure" }
       end
@@ -76,7 +76,7 @@ RSpec.describe Sentry::Sidekiq::SentryContextServerMiddleware do
     it "performs the job once and logs the extension's failure" do
       performed = 0
 
-      described_class.new(Sentry::JobExtensions::Consumer.new(extension: failing_extension)).call(HappyWorker.new, { "jid" => "123456", "class" => "HappyWorker", "args" => [] }, "default") { performed += 1 }
+      described_class.new(failing_extension).call(HappyWorker.new, { "jid" => "123456", "class" => "HappyWorker", "args" => [] }, "default") { performed += 1 }
 
       expect(performed).to eq(1)
       expect(sdk_log.string).to include('Job extension "failing" failed')
@@ -113,6 +113,14 @@ RSpec.describe Sentry::Sidekiq::SentryContextServerMiddleware do
       event = transport.events.last
       expect(event.tags).to include(queue: "default", jid: "123123", "sidekiq.marvel": true, "sidekiq.dc": true)
       expect(event.contexts[:sidekiq]).to include("class" => "TagsWorker", "jid" => "123123", "queue" => "default", "tags" => ["marvel", "dc"])
+    end
+
+    it "sets the job exactly as Sidekiq delivered it as the sidekiq context of the transaction" do
+      job = { "jid" => "123456", "class" => "HappyWorker", "args" => [{ "_aj_symbol_keys" => ["id"], "id" => 1 }] }
+
+      described_class.new.call(HappyWorker.new, job, "default") { }
+
+      expect(transport.events.last.contexts[:sidekiq]).to eq(job.merge("queue" => "default"))
     end
 
     it "has the correct origin" do
@@ -414,7 +422,7 @@ RSpec.describe Sentry::Sidekiq::SentryContextClientMiddleware do
       end
 
       it "enqueues the job once and logs the extension's failure" do
-        middleware = described_class.new(Sentry::Sidekiq::Producer.new(extension: failing_extension))
+        middleware = described_class.new(failing_extension)
         job = { "jid" => "123456", "class" => "HappyWorker", "args" => [], "queue" => "default" }
         enqueued = 0
 
