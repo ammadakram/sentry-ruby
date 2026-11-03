@@ -42,12 +42,12 @@ module Sentry
       end
 
       def instrument_enqueue(job:, **context, &enqueue)
-        return enqueue.call unless safely("decide whether to record the publish span", fallback: true) { record_publish_span?(job: job, **context) }
+        return enqueue.call unless safely("decide whether to record the producer span", fallback: true) { record_publish_span?(job: job, **context) }
 
         enqueued = false
         begin
           Sentry.with_child_span(op: PUBLISH_OP) do |span|
-            safely("record the publish span") { describe_publish_span(span, job: job, **context) } if span
+            safely("record the producer span") { describe_publish_span(span, job: job, **context) } if span
 
             enqueued = true
             enqueue.call
@@ -55,7 +55,7 @@ module Sentry
         rescue StandardError => e
           raise if enqueued
 
-          log_error("Job extension #{name.inspect} failed to record the publish span", e)
+          log_failure("record the producer span", e)
           enqueue.call
         end
       end
@@ -91,7 +91,7 @@ module Sentry
       def safely(context, fallback: nil)
         yield
       rescue StandardError => e
-        log_error("Job extension #{name.inspect} failed to #{context}", e)
+        log_failure(context, e)
         fallback
       end
 
@@ -294,6 +294,10 @@ module Sentry
         options = { extra: extra, tags: tags, hint: { background: false } }
         options[:contexts] = contexts unless contexts.empty?
         options
+      end
+
+      def log_failure(context, error)
+        log_error("Job extension #{name.inspect} failed to #{context}", error)
       end
 
       def sdk_logger
